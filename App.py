@@ -1,22 +1,20 @@
-import os
 import streamlit as st
 from youtube_transcript_api import YouTubeTranscriptApi
 from youtube_transcript_api._errors import TranscriptsDisabled, NoTranscriptFound
 from langchain_google_genai import ChatGoogleGenerativeAI
-from dotenv import load_dotenv
 
+# -------------------------
 # Configuration
+# -------------------------
 
-load_dotenv()
-
-# Verify API key is loaded
-if not os.getenv("GOOGLE_API_KEY"):
-    st.error("⚠️ GOOGLE_API_KEY not found! Please set it in your .env file.")
+# Verify API key from Streamlit Secrets
+if "GOOGLE_API_KEY" not in st.secrets:
+    st.error("⚠️ GOOGLE_API_KEY not found! Please add it in Streamlit Secrets (Advanced settings).")
     st.stop()
 
 st.set_page_config(page_title="YouTube Transcript Chat Assistant", page_icon="🎥")
 st.title("🎥 YouTube Transcript Chat Assistant")
-st.markdown("Ask Questions related to Youtube Video")
+st.markdown("Ask Questions related to a YouTube Video")
 st.markdown("---")
 
 # Initialize session state
@@ -33,13 +31,12 @@ video_url = st.text_input("Enter YouTube Video URL:", placeholder="https://www.y
 fetch_button = st.button("🔄 Fetch Transcript", use_container_width=True)
 
 if fetch_button and video_url:
-    # Reset session state
     st.session_state.transcript_text = ""
     st.session_state.video_title = ""
 
     with st.spinner("Fetching transcript..."):
         try:
-            # 1. Extract video ID
+            # Extract video ID
             if "v=" in video_url:
                 video_id = video_url.split("v=")[1].split("&")[0]
             elif "youtu.be/" in video_url:
@@ -49,17 +46,13 @@ if fetch_button and video_url:
 
             st.session_state.video_title = f"Video ID: {video_id}"
 
-            # 2. Fetch transcript using the v1.2+ API
-            ytt_api = YouTubeTranscriptApi()
-            fetched_transcript = ytt_api.fetch(video_id)
-
-            # Convert to text format
+            # Fetch transcript
+            fetched_transcript = YouTubeTranscriptApi().fetch(video_id)
             st.session_state.transcript_text = " ".join([snippet.text for snippet in fetched_transcript])
 
-            st.success(f"✅ Transcript successfully fetched!")
+            st.success("✅ Transcript successfully fetched!")
             st.info(f"📝 Transcript length: {len(st.session_state.transcript_text)} characters")
 
-            # Display transcript preview
             with st.expander("📄 View Transcript Preview"):
                 preview_length = min(2000, len(st.session_state.transcript_text))
                 st.text_area(
@@ -73,18 +66,17 @@ if fetch_button and video_url:
         except TranscriptsDisabled:
             st.error("❌ Transcripts are disabled for this video.")
         except NoTranscriptFound:
-            st.error("❌ No transcript found for this video. The video may not have captions.")
+            st.error("❌ No transcript found. The video may not have captions.")
         except Exception as e:
             st.error(f"❌ Error during processing: {str(e)}")
             st.info("💡 Make sure the URL is correct and the video has captions enabled.")
 
-
-#Chat with Gemini 2.5 Flash
-
+# -------------------------
+# Step 2: Chat with Gemini 2.5 Flash
+# -------------------------
 st.markdown("---")
 st.subheader("2️⃣ Ask Questions About the Video")
 
-# Only show chat interface if transcript is loaded
 if st.session_state.transcript_text:
     st.success(f"✓ Ready to answer questions about: {st.session_state.video_title}")
 
@@ -106,28 +98,31 @@ if st.session_state.transcript_text:
     if generate_button and user_input:
         with st.spinner("🤔 Thinking..."):
             try:
-                # Initialize Gemini 2.5 Flash (FREE!)
+                # Initialize Gemini 2.5 Flash using Streamlit secret
                 llm = ChatGoogleGenerativeAI(
                     model="gemini-2.5-flash",
-                    temperature=0.3
+                    temperature=0.3,
+                    google_api_key=st.secrets["GOOGLE_API_KEY"]
                 )
 
-                # Create the prompt with full transcript context
-                prompt = f"""You are a helpful YouTube Video Assistant. Answer the user's question based on the video transcript below.
+                # Prompt with transcript context
+                prompt = f"""
+You are a helpful YouTube Video Assistant. Answer the user's question based on the video transcript below.
 
-IMPORTANT INSTRUCTIONS:
-- Use ONLY the information from the video transcript provided
-- Provide detailed, well-structured answers
-- If the answer cannot be found in the transcript, clearly state: "This information is not available in the video transcript."
-- Be conversational and helpful
-- Quote relevant parts when helpful
+INSTRUCTIONS:
+- Use ONLY the information from the transcript.
+- Provide clear, structured answers.
+- If the answer isn't in the transcript, say: "This information is not available in the video transcript."
+- Be conversational and helpful.
+- Quote relevant parts when useful.
 
 VIDEO TRANSCRIPT:
 {st.session_state.transcript_text}
 
 USER QUESTION: {user_input}
 
-DETAILED ANSWER:"""
+DETAILED ANSWER:
+"""
 
                 # Get response from Gemini
                 response = llm.invoke(prompt)
@@ -142,14 +137,15 @@ DETAILED ANSWER:"""
 else:
     st.info("👆 Please fetch a YouTube video transcript first to start asking questions.")
 
-# Footer with important info
+# -------------------------
+# Footer
+# -------------------------
 st.markdown("---")
 st.markdown("""
 <div style='text-align: center; color: #666; font-size: 0.9em;'>
-    <p>💡 <b>Tips:</b> This tool works best with videos that have accurate captions/transcripts.</p>
+    <p>💡 <b>Tip:</b> Works best with videos that have accurate captions or transcripts.</p>
 </div>
 """, unsafe_allow_html=True)
 
-# Add note about long transcripts
 if st.session_state.transcript_text and len(st.session_state.transcript_text) > 50000:
     st.warning("⚠️ This transcript is quite long. For very long videos, responses might be slower or hit token limits.")
