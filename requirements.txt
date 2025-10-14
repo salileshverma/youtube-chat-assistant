@@ -4,3 +4,4 @@ langchain
 faiss-cpu
 youtube-transcript-api
 google-generativeai
+langchain-google-genai
